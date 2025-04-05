@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+
+# Use `sudo` when running the command to not 
+# get `Permission denied` as it hashes
+# files that are not owned by user.
+
+# Constants
+param=""
+hash_loc="/opt/integrity-check.log"
+
+# Check if invalid usage print instructions
+if [[ $# -ne 2 ]]; then
+    echo -e "Usage: ./integrity-check [OPTIONS] FILE/DIRECTORY\n\nOPTIONS:\n\ninit\t\tInitializes and stores hashes of all log files in the directory\ncheck\t\tCheck if hashes mismatch\nupdate\t\tUpdate log hashes"
+    exit 1
+fi
+
+# Run the command only when sudo or root to have the required access
+if [[ "$(whoami)" != "root" ]]; then
+    echo 'REMINDER: You are not running the command as sudo. Some files would not be hashed because the current user does not have required access.'
+    exit 1
+fi
+
+# Do when param 1 is init
+if [[ "$1" == "init" ]]; then
+    # Using find, we execute sha256sum to hash each files recursively within
+    # the given directory. We also ignore stderr. And, copy the output to 
+    # hash_loc.
+    find $2 -type f -exec sha256sum {} \; 2> /dev/null > $hash_loc
+    echo 'Hashes stored successfully.'
+fi
+
+# Do when param 1 is check
+if [[ "$1" == "check" ]]; then
+    # Using diff, we compare files from prev hash to current hash of file.
+    # If no diff, print unmodified, otherwise, modified.
+    if [[ "$(diff <(grep -e "$2$" $hash_loc) <(sha256sum $2))" == "" ]]; then
+        echo 'Status: Unmodified'
+    else
+        echo 'Status: Modified (Hash mismatch)'
+        diff <(grep -e "$2$" $hash_loc) <(sha256sum $2)
+    fi
+fi
+
+# Do when param 1 is update
+if [[ "$1" == "update" ]]; then
+    # grep -v to invert the matching and -e for regex and overwrite 
+    # hash_loc. Then, append the hash of the file from param 2 to hash_loc. 
+    tmp_file=$(mktemp)
+    grep -ve "$2$" $hash_loc > $tmp_file
+    cat $tmp_file > $hash_loc
+    rm -rf $tmp_file
+    sha256sum $2 >> $hash_loc
+    echo 'Hash updated successfully.'
+fi
